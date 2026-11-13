@@ -1,0 +1,57 @@
+# The React screen and its /api proxy (app/ui/server.py). It calls the API over the cluster
+# network, so it needs no identity token and no Google Cloud access. Private unless the
+# public overlay adds an Ingress (infra/k8s/public).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crossexam-web
+  labels: { app: crossexam-web }
+spec:
+  selector:
+    matchLabels: { app: crossexam-web }
+  template:
+    metadata:
+      labels: { app: crossexam-web }
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: web
+          image: ${IMAGE}
+          args: ["web"]
+          env:
+            - { name: PORT, value: "8080" }
+            - { name: API_URL, value: "http://crossexam-api:8000" }
+          ports:
+            - containerPort: 8080
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 } # also the load balancer's health check
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crossexam-web
+spec:
+  selector: { app: crossexam-web }
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: crossexam-web
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: crossexam-web }
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }

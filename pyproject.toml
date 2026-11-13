@@ -1,0 +1,18 @@
+[project]
+name = "crossexam"
+version = "0.2.0"
+description = "Multi-agent supply-chain document processing: LangChain v1, Celery, Redis, PostgreSQL, GCP"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501", "B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["integration: needs PostgreSQL and Redis"]

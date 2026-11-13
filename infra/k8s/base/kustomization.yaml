@@ -1,0 +1,7 @@
+# Shared by the app and migrate kustomizations: pod identities and secrets.
+# The crossexam namespace and the crossexam-config ConfigMap come from Terraform (gke.tf).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - serviceaccounts.yaml
+  - secrets.yaml

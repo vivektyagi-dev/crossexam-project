@@ -1,0 +1,67 @@
+# FastAPI. Reachable only inside the cluster: the web screen forwards /api to it and the
+# CronJobs call /admin. It has no external address.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crossexam-api
+  labels: { app: crossexam-api }
+spec:
+  selector:
+    matchLabels: { app: crossexam-api }
+  template:
+    metadata:
+      labels: { app: crossexam-api }
+    spec:
+      serviceAccountName: crossexam-api
+      containers:
+        - name: api
+          image: ${IMAGE}
+          args: ["api"]
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef: { name: crossexam-config }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+          startupProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8000 } # database and Redis reachable
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            periodSeconds: 20
+          volumeMounts:
+            - { name: secrets, mountPath: /var/run/secrets/crossexam, readOnly: true }
+      volumes:
+        - name: secrets
+          csi:
+            driver: secrets-store-gke.csi.k8s.io
+            readOnly: true
+            volumeAttributes: { secretProviderClass: crossexam-secrets }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crossexam-api
+spec:
+  selector: { app: crossexam-api }
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: crossexam-api
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: crossexam-api }
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }

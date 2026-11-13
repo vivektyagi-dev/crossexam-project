@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: api
+    metrics_path: /metrics
+    static_configs: [{ targets: ["api:8000"] }]
+  # One target per container: scripts\scale-workers.cmd runs several of each pool, and a
+  # static host name would reach only one of them per scrape, mixing their counters.
+  - job_name: workers
+    dns_sd_configs:
+      - names: [worker-reader, worker-agent]
+        type: A
+        port: 9100

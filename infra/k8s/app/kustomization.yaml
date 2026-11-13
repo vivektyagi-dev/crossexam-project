@@ -1,0 +1,12 @@
+# Everything that runs all the time. The deploy workflow renders it with ${IMAGE} and
+# ${PROJECT_ID} filled in and applies it after the migrate job (.github/workflows/deploy.yml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: crossexam
+resources:
+  - ../base
+  - api.yaml
+  - web.yaml
+  - workers.yaml
+  - flower.yaml
+  - cronjobs.yaml

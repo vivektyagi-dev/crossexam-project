@@ -1,0 +1,121 @@
+# Local stack: everything except the LLM runs on your machine.
+#   docker compose up --build                          core stack
+#   docker compose --profile monitoring up --build     + Prometheus and Grafana
+name: crossexam
+
+x-app: &app
+  build: .
+  image: crossexam:local
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://crossexam:crossexam@postgres:5432/crossexam
+    REDIS_URL: redis://redis:6379/0
+    LOCAL_STORAGE_DIR: /app/data/storage
+    API_URL: http://api:8000
+  volumes:
+    - storage:/app/data/storage
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    migrate: { condition: service_completed_successfully }
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: crossexam
+      POSTGRES_PASSWORD: crossexam
+      POSTGRES_DB: crossexam
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crossexam"]
+      interval: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      retries: 20
+
+  migrate:
+    build: .
+    image: crossexam:local
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://crossexam:crossexam@postgres:5432/crossexam
+    command: ["migrate"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *app
+    command: ["api"]
+    ports: ["8000:8000"]
+
+  web:
+    <<: *app
+    command: ["web"]
+    environment:
+      API_URL: http://api:8000
+      PORT: "8080"
+    ports: ["8080:8080"]
+    depends_on: [api]
+
+  worker-reader:
+    <<: *app
+    command: ["reader"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://crossexam:crossexam@postgres:5432/crossexam
+      REDIS_URL: redis://redis:6379/0
+      LOCAL_STORAGE_DIR: /app/data/storage
+      CELERY_CONCURRENCY: "6"
+
+  worker-agent:
+    <<: *app
+    command: ["agent"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://crossexam:crossexam@postgres:5432/crossexam
+      REDIS_URL: redis://redis:6379/0
+      LOCAL_STORAGE_DIR: /app/data/storage
+      CELERY_CONCURRENCY: "6"
+
+  beat:
+    <<: *app
+    command: ["beat"]
+
+  flower:
+    <<: *app
+    command: ["flower"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+psycopg://crossexam:crossexam@postgres:5432/crossexam
+      PORT: "5555"
+    ports: ["5555:5555"]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [monitoring]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus  # keeps metric history across scripts\down.cmd
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    profiles: [monitoring]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3000:3000"]
+
+volumes:
+  pgdata:
+  storage:
+  promdata:

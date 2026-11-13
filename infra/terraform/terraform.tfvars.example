@@ -1,0 +1,11 @@
+project_id        = "your-gcp-project-id"
+region            = "asia-south1"
+github_repository = "your-github-user/CrossExam" # exactly as on GitHub, capitalisation included
+alert_email       = "you@example.com"
+
+llm_provider            = "gemini"
+llm_requests_per_minute = 60
+langsmith_enabled       = false
+daily_ai_budget_usd     = 5
+
+# Worker counts, month-end scaling and queue targets live in infra/k8s/app/workers.yaml.

@@ -1,0 +1,111 @@
+# The two Celery worker pools, scaled by KEDA on two signals; the higher one wins:
+#   - month-end: the last week of the month (24th 06:00 to 1st 22:00, India time) runs a
+#     larger floor of workers
+#   - backlog: the length of each Redis queue, so a big upload adds workers on any day
+# Every worker shares one LLM rate limit (LLM_REQUESTS_PER_MINUTE), so raising
+# maxReplicaCount without raising that limit only adds workers that wait.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crossexam-reader
+  labels: { app: crossexam-reader }
+spec:
+  selector:
+    matchLabels: { app: crossexam-reader }
+  template:
+    metadata:
+      labels: { app: crossexam-reader }
+    spec:
+      serviceAccountName: crossexam-reader
+      terminationGracePeriodSeconds: 660 # Celery's task_time_limit: a removed worker finishes its tasks
+      containers:
+        - name: reader
+          image: ${IMAGE}
+          args: ["reader"]
+          env:
+            - { name: SERVICE_NAME, value: crossexam-reader }
+            - { name: CELERY_CONCURRENCY, value: "8" }
+          envFrom:
+            - configMapRef: { name: crossexam-config }
+          resources:
+            requests: { cpu: "1", memory: 2Gi }
+          volumeMounts:
+            - { name: secrets, mountPath: /var/run/secrets/crossexam, readOnly: true }
+      volumes:
+        - name: secrets
+          csi:
+            driver: secrets-store-gke.csi.k8s.io
+            readOnly: true
+            volumeAttributes: { secretProviderClass: crossexam-secrets }
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: crossexam-reader
+spec:
+  scaleTargetRef: { name: crossexam-reader }
+  minReplicaCount: 1
+  maxReplicaCount: 6
+  triggers:
+    - type: cron
+      metadata: { timezone: Asia/Kolkata, start: "0 6 24 * *", end: "0 22 1 * *", desiredReplicas: "4" }
+    # About one worker per 40 waiting tasks (reader tasks are single pages).
+    - type: redis
+      metadata: { addressFromEnv: REDIS_ADDRESS, listName: reader.urgent, listLength: "40" }
+    - type: redis
+      metadata: { addressFromEnv: REDIS_ADDRESS, listName: reader.normal, listLength: "40" }
+    - type: redis
+      metadata: { addressFromEnv: REDIS_ADDRESS, listName: reader.bulk, listLength: "40" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crossexam-agent
+  labels: { app: crossexam-agent }
+spec:
+  selector:
+    matchLabels: { app: crossexam-agent }
+  template:
+    metadata:
+      labels: { app: crossexam-agent }
+    spec:
+      serviceAccountName: crossexam-agent
+      terminationGracePeriodSeconds: 660
+      containers:
+        - name: agent
+          image: ${IMAGE}
+          args: ["agent"]
+          env:
+            - { name: SERVICE_NAME, value: crossexam-agent }
+            - { name: CELERY_CONCURRENCY, value: "8" }
+          envFrom:
+            - configMapRef: { name: crossexam-config }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi } # mostly waiting on the model
+          volumeMounts:
+            - { name: secrets, mountPath: /var/run/secrets/crossexam, readOnly: true }
+      volumes:
+        - name: secrets
+          csi:
+            driver: secrets-store-gke.csi.k8s.io
+            readOnly: true
+            volumeAttributes: { secretProviderClass: crossexam-secrets }
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: crossexam-agent
+spec:
+  scaleTargetRef: { name: crossexam-agent }
+  minReplicaCount: 1
+  maxReplicaCount: 4
+  triggers:
+    - type: cron
+      metadata: { timezone: Asia/Kolkata, start: "0 6 24 * *", end: "0 22 1 * *", desiredReplicas: "3" }
+    # About one worker per 20 waiting tasks (agent tasks are whole documents and packs).
+    - type: redis
+      metadata: { addressFromEnv: REDIS_ADDRESS, listName: agent.urgent, listLength: "20" }
+    - type: redis
+      metadata: { addressFromEnv: REDIS_ADDRESS, listName: agent.normal, listLength: "20" }
+    - type: redis
+      metadata: { addressFromEnv: REDIS_ADDRESS, listName: agent.bulk, listLength: "20" }

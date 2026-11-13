@@ -1,0 +1,8 @@
+# The database migration, run once per deploy before the new code rolls out. A Job's pod
+# template cannot change, so the deploy workflow deletes the previous run first.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: crossexam
+resources:
+  - ../base
+  - job.yaml

@@ -1,0 +1,58 @@
+# Housekeeping: each job asks the API to queue a task (app/api/main.py, "admin").
+# CronJobs rather than Celery beat: beat forgets its schedule on every restart, so a daily
+# job would never run on a cluster that deploys more than once a day.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: crossexam-reap-stale
+spec:
+  schedule: "*/10 * * * *"
+  timeZone: Asia/Kolkata
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 120
+      template:
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          containers:
+            - name: call
+              image: ${IMAGE}
+              command:
+                - python
+                - -c
+                - "import urllib.request as u; u.urlopen(u.Request('http://crossexam-api:8000/admin/reap-stale', method='POST'), timeout=30)"
+              resources:
+                requests: { cpu: 100m, memory: 128Mi }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: crossexam-nightly-check
+spec:
+  schedule: "30 2 * * *"
+  timeZone: Asia/Kolkata
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 120
+      template:
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          containers:
+            - name: call
+              image: ${IMAGE}
+              command:
+                - python
+                - -c
+                - "import urllib.request as u; u.urlopen(u.Request('http://crossexam-api:8000/admin/nightly-check', method='POST'), timeout=30)"
+              resources:
+                requests: { cpu: 100m, memory: 128Mi }

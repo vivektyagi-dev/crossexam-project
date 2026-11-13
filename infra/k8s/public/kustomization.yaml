@@ -1,0 +1,12 @@
+# The app plus an external load balancer for the web screen. Used instead of ../app when the
+# repository variable PUBLIC_WEB is "true".
+#
+# Demo only: the API trusts the X-User and X-Role headers the screen sends, so anyone who
+# finds the address can act as a finance manager. For real users, put Identity-Aware Proxy
+# (a BackendConfig on crossexam-web) and HTTPS (a ManagedCertificate) in front of it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: crossexam
+resources:
+  - ../app
+  - ingress.yaml

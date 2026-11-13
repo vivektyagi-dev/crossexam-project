@@ -1,0 +1,224 @@
+@import "tailwindcss";
+@import "@fontsource-variable/plus-jakarta-sans";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource/instrument-serif/400-italic.css";
+
+/* The theme lives on <html data-theme="dark|light">; `dark:` follows it, not the OS. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ------------------------------------------------------------------ tokens */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --page: #f6f4fe;
+  --ink: #17133b;
+  --ink-2: #4a4672;
+  --ink-3: #6f6b98;
+  --surface: rgba(255, 255, 255, 0.72);
+  --surface-2: rgba(255, 255, 255, 0.92);
+  --sunk: rgba(23, 19, 59, 0.045);
+  --line: rgba(23, 19, 59, 0.09);
+  --line-strong: rgba(23, 19, 59, 0.17);
+  --grid-line: rgba(23, 19, 59, 0.05);
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 12px 32px -14px rgba(76, 52, 170, 0.22);
+  --aurora-opacity: 0.32;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #070617;
+  --ink: #f3f1ff;
+  --ink-2: #bcb8dd;
+  --ink-3: #8783ad;
+  --surface: rgba(22, 20, 50, 0.58);
+  --surface-2: rgba(36, 33, 74, 0.78);
+  --sunk: rgba(255, 255, 255, 0.035);
+  --line: rgba(255, 255, 255, 0.085);
+  --line-strong: rgba(255, 255, 255, 0.17);
+  --grid-line: rgba(255, 255, 255, 0.035);
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 24px 48px -24px rgba(0, 0, 0, 0.7);
+  --aurora-opacity: 0.5;
+}
+
+@theme inline {
+  --font-sans: "Plus Jakarta Sans Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "Cascadia Code", monospace;
+  --font-serif: "Instrument Serif", Georgia, serif;
+
+  --color-page: var(--page);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-sunk: var(--sunk);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+}
+
+/* ------------------------------------------------------------------ base */
+html,
+body {
+  background: var(--page);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  min-height: 100dvh;
+}
+
+::selection {
+  background: rgba(168, 85, 247, 0.35);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+:focus-visible {
+  outline: 2px solid #a855f7;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ------------------------------------------------------------------ utilities */
+@utility glass {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+}
+
+/* A 1px gradient ring drawn with a mask, so the card keeps its own glass background.
+   Set --gb to change the gradient. */
+@utility gradient-border {
+  position: relative;
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    border-radius: inherit;
+    background: var(--gb, linear-gradient(135deg, #8b5cf6, #d946ef 50%, #f59e0b));
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+}
+
+@utility text-gradient {
+  background: var(--tg, linear-gradient(90deg, #a78bfa, #f0abfc 50%, #fcd34d));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility grid-bg {
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse at 50% 0%, #000 30%, transparent 75%);
+}
+
+/* ------------------------------------------------------------------ aurora background */
+.aurora-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: var(--aurora-opacity);
+  transition: background-color 1.4s ease;
+  will-change: transform;
+}
+
+.aurora-blob:nth-child(1) {
+  animation: drift-a 26s ease-in-out infinite alternate;
+}
+.aurora-blob:nth-child(2) {
+  animation: drift-b 32s ease-in-out infinite alternate;
+}
+.aurora-blob:nth-child(3) {
+  animation: drift-c 38s ease-in-out infinite alternate;
+}
+
+@keyframes drift-a {
+  to {
+    transform: translate(12vw, 8vh) scale(1.15);
+  }
+}
+@keyframes drift-b {
+  to {
+    transform: translate(-10vw, 12vh) scale(0.9);
+  }
+}
+@keyframes drift-c {
+  to {
+    transform: translate(6vw, -10vh) scale(1.2);
+  }
+}
+
+/* ------------------------------------------------------------------ small motion pieces */
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--sunk) 25%, var(--line) 50%, var(--sunk) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: 12px;
+}
+
+@keyframes travel {
+  from {
+    left: 0%;
+    opacity: 0;
+  }
+  20%,
+  80% {
+    opacity: 1;
+  }
+  to {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+.travel-dot {
+  animation: travel 2.4s ease-in-out infinite;
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin-slow {
+  animation: spin-slow 6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-blob,
+  .travel-dot,
+  .spin-slow,
+  .skeleton {
+    animation: none !important;
+  }
+}

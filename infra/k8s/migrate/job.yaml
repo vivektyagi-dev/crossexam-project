@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: crossexam-migrate
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      serviceAccountName: crossexam-api
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: ${IMAGE}
+          args: ["migrate"]
+          env:
+            # Demo master data (suppliers, POs, goods receipts: what the ERP would hold), loaded
+            # once into an empty database. Keep it equal to the shipments behind the files you
+            # upload (scripts\demo-data.cmd makes 60 by default); "0" skips it, e.g. for a real ERP.
+            - { name: DEMO_SHIPMENTS, value: "60" }
+          envFrom:
+            - configMapRef: { name: crossexam-config }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+          volumeMounts:
+            - { name: secrets, mountPath: /var/run/secrets/crossexam, readOnly: true }
+      volumes:
+        - name: secrets
+          csi:
+            driver: secrets-store-gke.csi.k8s.io
+            readOnly: true
+            volumeAttributes: { secretProviderClass: crossexam-secrets }

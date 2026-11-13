@@ -1,0 +1,109 @@
+# Deploys main to GKE after CI passes. Authentication is Workload Identity Federation:
+# no service-account JSON key exists anywhere.
+#
+# Settings > Secrets and variables > Actions, on the Variables or the Secrets tab (either works;
+# Variables keep the values readable in logs, Secrets show them as ***):
+#   GCP_PROJECT_ID, GCP_REGION                 (terraform.tfvars)
+#   GCP_WIF_PROVIDER, GCP_DEPLOYER_SA          (terraform output)
+#   PUBLIC_WEB = true   optional: put the web screen behind a public load balancer (demo only)
+#
+# Terraform creates the cluster, namespace, config map and KEDA; this workflow only builds the
+# image and applies infra/k8s with ${IMAGE} and ${PROJECT_ID} filled in.
+name: deploy
+
+on:
+  workflow_run:
+    workflows: [ci]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID || secrets.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION || secrets.GCP_REGION }}
+  WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER || secrets.GCP_WIF_PROVIDER }}
+  DEPLOYER_SA: ${{ vars.GCP_DEPLOYER_SA || secrets.GCP_DEPLOYER_SA }}
+  PUBLIC_WEB: ${{ vars.PUBLIC_WEB || secrets.PUBLIC_WEB }}
+  CLUSTER: crossexam-gke
+  NAMESPACE: crossexam
+  # A workflow_run starts on the newest commit of main; deploy the commit CI actually tested.
+  SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check repository settings
+        run: |
+          missing=""
+          for name in PROJECT_ID REGION WIF_PROVIDER DEPLOYER_SA; do
+            [ -n "${!name}" ] || missing="$missing GCP_$name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Not set:$missing. Add them under Settings > Secrets and variables > Actions (Variables or Secrets tab), then re-run."
+            exit 1
+          fi
+          echo "IMAGE=$REGION-docker.pkg.dev/$PROJECT_ID/crossexam/crossexam:$SHA" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Build and push image
+        run: |
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - uses: google-github-actions/get-gke-credentials@v3
+        with:
+          cluster_name: ${{ env.CLUSTER }}
+          location: ${{ env.REGION }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Migrate database
+        run: |
+          kubectl -n "$NAMESPACE" delete job crossexam-migrate --ignore-not-found --wait=true
+          kubectl kustomize infra/k8s/migrate | envsubst '${IMAGE} ${PROJECT_ID}' | kubectl apply -f -
+          for _ in $(seq 90); do
+            state=$(kubectl -n "$NAMESPACE" get job crossexam-migrate -o jsonpath='{.status.conditions[?(@.status=="True")].type}')
+            case "$state" in *Complete*|*Failed*) break ;; esac
+            sleep 10
+          done
+          kubectl -n "$NAMESPACE" logs job/crossexam-migrate --tail=50 || true
+          case "$state" in
+            *Complete*) ;;
+            *) echo "::error::Migration did not complete (${state:-still running after 15 minutes})"; exit 1 ;;
+          esac
+
+      - name: Roll out
+        run: |
+          overlay=infra/k8s/app
+          if [ "$PUBLIC_WEB" = "true" ]; then overlay=infra/k8s/public; fi
+          kubectl kustomize "$overlay" | envsubst '${IMAGE} ${PROJECT_ID}' | kubectl apply -f -
+          for name in api web reader agent flower; do
+            kubectl -n "$NAMESPACE" rollout status "deployment/crossexam-$name" --timeout=10m
+          done
+
+      - name: Smoke test
+        # Through the web screen's proxy to the API and the database, all inside the cluster.
+        run: |
+          kubectl -n "$NAMESPACE" exec deploy/crossexam-web -- \
+            python -c "import urllib.request as u; u.urlopen('http://localhost:8080/api/stats', timeout=30)"

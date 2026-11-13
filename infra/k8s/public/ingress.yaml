@@ -1,0 +1,14 @@
+# External Application Load Balancer (HTTP) on an ephemeral IP:
+#   kubectl -n crossexam get ingress crossexam-web    (ADDRESS appears after a few minutes)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: crossexam-web
+  annotations:
+    kubernetes.io/ingress.class: gce
+spec:
+  defaultBackend:
+    service:
+      name: crossexam-web
+      port:
+        number: 80
